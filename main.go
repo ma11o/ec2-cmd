@@ -6,7 +6,9 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/spf13/cobra"
@@ -71,7 +73,6 @@ func fetchInstances() {
 }
 
 func connectToInstance(cmd *cobra.Command, args []string) {
-	// EC2 インスタンス一覧を取得
 	fetchInstances()
 
 	if len(instances) == 0 {
@@ -79,30 +80,32 @@ func connectToInstance(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	// インタラクティブな選択肢を表示
-	fmt.Println("Select an EC2 instance to connect:")
-	for i, instance := range instances {
-		fmt.Printf("[%d] ID: %s, Name: %s\n", i, instance.InstanceID, instance.InstanceName)
+	var choices []string
+	for _, instance := range instances {
+		choices = append(choices, instance.InstanceID+":"+instance.InstanceName)
 	}
 
-	var choice int
-	fmt.Print("Enter the number of the instance to connect: ")
-	_, err := fmt.Scan(&choice)
-	if err != nil || choice < 0 || choice >= len(instances) {
-		fmt.Println("Invalid selection.")
+	var selectedInstance string
+	selectPrompt := &survey.Select{
+		Message: "Select an EC2 instance to connect:",
+		Options: choices,
+		Default: choices[0],
+	}
+
+	err := survey.AskOne(selectPrompt, &selectedInstance)
+	if err != nil {
+		fmt.Println("Error:", err)
 		return
 	}
 
-	selected := instances[choice]
-	fmt.Printf("Connecting to Instance ID: %s, Name: %s\n", selected.InstanceID, selected.InstanceName)
+	split := strings.Split(selectedInstance, ":")
+	fmt.Printf("Connecting to Instance ID: %s\n", split[0])
 
-	// `aws ssm start-session` コマンドを実行
-	command := exec.Command("aws", "ssm", "start-session", "--target", selected.InstanceID)
+	command := exec.Command("aws", "ssm", "start-session", "--target", split[0])
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 	command.Stdin = os.Stdin
 
-	// コマンドを実行してセッションを開始
 	err = command.Run()
 	if err != nil {
 		log.Fatalf("Failed to start session: %v", err)
